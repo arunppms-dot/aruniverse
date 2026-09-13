@@ -1,0 +1,745 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Bridge — bring artwork to life</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #14151a;
+    --bg-raised: #1b1d24;
+    --line: #2c2e37;
+    --brass: #c9a15c;
+    --brass-dim: #8d774a;
+    --ink: #edeae3;
+    --ink-dim: #8a8d97;
+    --sage: #6fa986;
+    --err: #c96b5c;
+    --radius: 3px;
+  }
+  *{ box-sizing: border-box; }
+  html,body{
+    margin:0; padding:0; height:100%;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: 'Inter', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  h1,h2,h3{ font-family:'Fraunces', serif; font-weight:500; margin:0; }
+  .stage{ min-height:100dvh; display:none; flex-direction:column; position:relative; z-index:1; }
+  .stage.active{ display:flex; }
+
+  /* ---------- Drifting background ---------- */
+  .bg-fx{ position:fixed; inset:0; z-index:0; overflow:hidden; pointer-events:none; background: var(--bg); }
+  .bg-fx span{ position:absolute; border-radius:50%; filter: blur(70px); opacity:0.32; mix-blend-mode: screen; will-change: transform; }
+  .bg-fx span:nth-child(1){ width:52vw; height:52vw; left:-12vw; top:-14vw; background: var(--brass); animation: drift-a 48s ease-in-out infinite; }
+  .bg-fx span:nth-child(2){ width:44vw; height:44vw; right:-10vw; top:8vw; background: #5c8ac9; animation: drift-b 56s ease-in-out infinite; }
+  .bg-fx span:nth-child(3){ width:48vw; height:48vw; left:14vw; bottom:-18vw; background: var(--sage); animation: drift-c 62s ease-in-out infinite; }
+  .bg-fx span:nth-child(4){ width:36vw; height:36vw; right:8vw; bottom:-6vw; background: #c96b8a; animation: drift-d 40s ease-in-out infinite; }
+  @keyframes drift-a{ 0%,100%{ transform: translate(0,0) scale(1); } 50%{ transform: translate(10vw, 8vh) scale(1.15); } }
+  @keyframes drift-b{ 0%,100%{ transform: translate(0,0) scale(1); } 50%{ transform: translate(-8vw, 10vh) scale(0.9); } }
+  @keyframes drift-c{ 0%,100%{ transform: translate(0,0) scale(1); } 50%{ transform: translate(6vw, -8vh) scale(1.1); } }
+  @keyframes drift-d{ 0%,100%{ transform: translate(0,0) scale(1); } 50%{ transform: translate(-9vw, -6vh) scale(1.2); } }
+  @media (prefers-reduced-motion: reduce){ .bg-fx span{ animation: none; } }
+
+  /* ---------- Header ---------- */
+  .top{ display:flex; align-items:baseline; justify-content:space-between; padding: 28px clamp(20px,5vw,64px) 0; }
+  .top .mark{ font-size:22px; letter-spacing:0.01em; }
+  .top .mark em{ font-style:normal; color:var(--brass); }
+  .top .sub{ color:var(--ink-dim); font-size:13px; }
+
+  /* ---------- Shared layout ---------- */
+  #stage-gallery, #stage-add{ padding: 0 clamp(20px,5vw,64px) 48px; }
+  .intro{ max-width: 620px; margin: 40px 0 28px; }
+  .intro h1{ font-size: clamp(26px, 3.6vw, 36px); line-height:1.15; }
+  .intro p{ color: var(--ink-dim); font-size:15px; line-height:1.6; margin-top:12px; max-width: 50ch; }
+
+  button.primary{
+    background: var(--brass); color: #14151a; border:none;
+    font-family:'Inter'; font-weight:600; font-size:14px;
+    padding: 13px 26px; border-radius: var(--radius); cursor:pointer; letter-spacing: 0.01em;
+  }
+  button.primary:disabled{ background: var(--line); color: var(--ink-dim); cursor:not-allowed; }
+  button.primary:not(:disabled):hover{ background:#dcb571; }
+  button.ghost{
+    background:none; border:1px solid var(--line); color: var(--ink);
+    font-family:'Inter'; font-size:13px; padding: 10px 18px; border-radius: var(--radius); cursor:pointer;
+  }
+  button.ghost:hover{ border-color: var(--brass); }
+  button.tiny{ font-size:11px !important; padding: 7px 12px !important; }
+  button.danger:hover{ border-color: var(--err); color: var(--err); }
+
+  /* ---------- Gallery stage ---------- */
+  .gallery-top{ display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:16px; max-width:1000px; }
+  .gallery-actions{ display:flex; gap:10px; flex-wrap:wrap; }
+  .empty-state{
+    color:var(--ink-dim); font-size:14px; border:1px dashed var(--line); border-radius: var(--radius);
+    padding:36px; max-width:460px; text-align:center; margin-top:8px;
+  }
+  .campaign-grid{
+    display:grid; grid-template-columns: repeat(auto-fill, minmax(190px,1fr));
+    gap:18px; max-width: 1000px; margin-top: 24px;
+  }
+  .campaign-card{
+    border:1px solid var(--line); background: var(--bg-raised); border-radius: var(--radius);
+    overflow:hidden; display:flex; flex-direction:column;
+  }
+  .campaign-card .thumb{ aspect-ratio: 1 / 1; overflow:hidden; background:#000; }
+  .campaign-card .thumb img{ width:100%; height:100%; object-fit:cover; display:block; }
+  .campaign-card .meta{ padding: 12px 14px 8px; display:flex; flex-direction:column; gap:4px; }
+  .campaign-card .name{ font-size:14px; font-weight:500; word-break:break-word; }
+  .campaign-card .sub{ font-size:11px; color:var(--ink-dim); }
+  .campaign-card .row{ display:flex; gap:8px; padding: 8px 14px 14px; margin-top:auto; }
+
+  #file-import{ display:none; }
+
+  /* ---------- Add-artwork stage ---------- */
+  .back-link{ color: var(--ink-dim); font-size:13px; cursor:pointer; margin: 40px 0 20px; display:inline-block; }
+  .back-link:hover{ color: var(--brass); }
+  .field{ display:flex; flex-direction:column; gap:6px; max-width: 420px; margin-bottom: 24px; }
+  .field label{ font-size:12px; color: var(--brass-dim); }
+  .field input[type=text]{
+    background: var(--bg-raised); border:1px solid var(--line); color: var(--ink);
+    padding: 11px 13px; border-radius: var(--radius); font-family:'Inter'; font-size:14px;
+  }
+  .field input[type=text]:focus{ outline:none; border-color: var(--brass); }
+
+  .plates{ display:grid; grid-template-columns: 1fr 1fr; gap:20px; max-width: 860px; }
+  @media (max-width: 640px){ .plates{ grid-template-columns: 1fr; } }
+  .plate{
+    border: 1px solid var(--line); background: var(--bg-raised); border-radius: var(--radius);
+    padding: 22px; display:flex; flex-direction:column; gap:14px; min-height: 240px;
+  }
+  .plate .step{ font-size:12px; color: var(--brass-dim); }
+  .plate h3{ font-size: 18px; }
+  .plate .hint{ color: var(--ink-dim); font-size: 13px; line-height:1.5; }
+  .dropzone{
+    flex:1; border: 1px dashed var(--line); border-radius: var(--radius);
+    display:flex; align-items:center; justify-content:center; text-align:center;
+    padding: 16px; cursor:pointer; position:relative; overflow:hidden;
+    transition: border-color .15s ease; min-height: 140px;
+  }
+  .dropzone:hover, .dropzone.drag{ border-color: var(--brass); }
+  .dropzone input{ position:absolute; inset:0; opacity:0; cursor:pointer; }
+  .dropzone .placeholder{ color: var(--ink-dim); font-size: 13px; }
+  .dropzone img, .dropzone video{ max-width:100%; max-height: 170px; object-fit:contain; border-radius: 2px; }
+  .use-camera-link{ font-size:12px; color: var(--ink-dim); text-align:center; cursor:pointer; text-decoration: underline; text-underline-offset: 2px; }
+  .use-camera-link:hover{ color: var(--brass); }
+
+  .camera-panel{ display:none; flex-direction:column; gap:10px; align-items:center; }
+  .camera-panel.show{ display:flex; }
+  .camera-panel video{ width:100%; max-height:170px; object-fit:cover; border-radius:2px; background:#000; }
+  .camera-panel .row{ display:flex; gap:8px; }
+  .filename{ font-size:12px; color: var(--sage); word-break:break-all; }
+  .go{ margin-top: 28px; display:flex; align-items:center; gap:16px; }
+  .go .note{ font-size:12px; color: var(--ink-dim); }
+
+  /* ---------- Compiling stage ---------- */
+  #stage-compile{ align-items:center; justify-content:center; text-align:center; }
+  .compile-box{ max-width: 440px; }
+  .compile-box h2{ font-size:22px; margin-bottom:10px; }
+  .compile-box p{ color: var(--ink-dim); font-size:14px; }
+  .track{ width:100%; height:2px; background: var(--line); margin: 28px 0 12px; overflow:hidden; }
+  .track .fill{ height:100%; width:0%; background: var(--brass); transition: width .2s ease; }
+  .compile-log{ font-size:12px; color: var(--ink-dim); font-family: monospace; min-height: 18px; }
+
+  /* ---------- AR stage ---------- */
+  #stage-ar{ position:relative; }
+  #ar-container{ position:absolute; inset:0; }
+  #ar-container video{ object-fit: cover; }
+  .ar-hud{ position:relative; z-index:5; display:flex; justify-content:space-between; align-items:flex-start; padding: 20px; pointer-events:none; }
+  .ar-hud > *{ pointer-events:auto; }
+  .status-pill{
+    background: rgba(20,21,26,0.72); backdrop-filter: blur(6px); border:1px solid var(--line);
+    border-radius: 999px; padding: 8px 16px; font-size:12px; color: var(--ink-dim);
+    transition: color .2s ease, border-color .2s ease;
+  }
+  .status-pill.found{ color: var(--sage); border-color: var(--sage); }
+  .ar-hud button.ghost{ background: rgba(20,21,26,0.72); backdrop-filter: blur(6px); }
+  .ar-guide{
+    position:absolute; left:50%; bottom:36px; transform:translateX(-50%); z-index:5; font-size:13px;
+    color: var(--ink-dim); background: rgba(20,21,26,0.72); backdrop-filter: blur(6px);
+    padding: 10px 18px; border-radius: 999px; border:1px solid var(--line); text-align:center; max-width: 86vw;
+  }
+  .error-banner{
+    position:absolute; top:0; left:0; right:0; z-index:10; background: var(--err); color:#1a1210;
+    font-size:13px; padding: 12px 20px; display:none; text-align:center;
+  }
+  .error-banner.show{ display:block; }
+  .toast{
+    position:fixed; bottom:24px; left:50%; transform:translateX(-50%); z-index:50;
+    background: var(--bg-raised); border:1px solid var(--brass-dim); color:var(--ink);
+    padding:12px 20px; border-radius:999px; font-size:13px; opacity:0; pointer-events:none;
+    transition: opacity .25s ease;
+  }
+  .toast.show{ opacity:1; }
+</style>
+</head>
+<body>
+
+<div class="bg-fx" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+
+<!-- ===================== GALLERY STAGE ===================== -->
+<div class="stage active" id="stage-gallery">
+  <div class="top">
+    <div class="mark">bridge<em>.</em></div>
+    <div class="sub">marker-based AR, in your browser</div>
+  </div>
+
+  <div class="intro">
+    <h1>Your gallery of artworks.</h1>
+    <p>Every piece here can be recognized by the same camera session — point at any of them and its video comes to life. Everything is compiled and stored on this device.</p>
+  </div>
+
+  <div class="gallery-top">
+    <div class="gallery-actions">
+      <button class="primary" id="btn-open-ar" disabled>Open AR camera</button>
+      <button class="ghost" id="btn-add">+ Add artwork</button>
+    </div>
+    <div class="gallery-actions">
+      <button class="ghost tiny" id="btn-export">Export library</button>
+      <button class="ghost tiny" id="btn-import">Import library</button>
+      <input type="file" id="file-import" accept="application/json" />
+    </div>
+  </div>
+
+  <div class="empty-state" id="empty-state">No artwork yet — add your first piece to build the gallery.</div>
+  <div class="campaign-grid" id="campaign-grid"></div>
+</div>
+
+<!-- ===================== ADD ARTWORK STAGE ===================== -->
+<div class="stage" id="stage-add">
+  <div class="top">
+    <div class="mark">bridge<em>.</em></div>
+    <div class="sub">marker-based AR, in your browser</div>
+  </div>
+  <span class="back-link" id="back-to-gallery">&larr; back to gallery</span>
+
+  <div class="field">
+    <label>Name this piece</label>
+    <input type="text" id="input-name" placeholder="e.g. Harbor at Dusk" />
+  </div>
+
+  <div class="plates">
+    <div class="plate">
+      <div class="step">01 — the marker</div>
+      <h3>Artwork image</h3>
+      <div class="hint">A photo, print, or painting with enough visual detail to track — texture, contrast, edges. Flat single colors won't track well.</div>
+      <div class="dropzone" id="drop-image">
+        <input type="file" id="input-image" accept="image/*" />
+        <div class="placeholder" id="placeholder-image">Drop an image, or tap to choose</div>
+      </div>
+      <div class="filename" id="filename-image"></div>
+      <div class="use-camera-link" id="btn-use-camera">or use your camera instead</div>
+      <div class="camera-panel" id="camera-panel">
+        <video id="camera-preview" autoplay playsinline muted></video>
+        <div class="row">
+          <button class="ghost tiny" id="btn-capture">Capture photo</button>
+          <button class="ghost tiny" id="btn-cancel-camera">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="plate">
+      <div class="step">02 — the overlay</div>
+      <h3>Video layer</h3>
+      <div class="hint">Plays on top of the artwork once it's recognized. Keep it short and loop-friendly.</div>
+      <div class="dropzone" id="drop-video">
+        <input type="file" id="input-video" accept="video/*" />
+        <div class="placeholder" id="placeholder-video">Drop a video, or tap to choose</div>
+      </div>
+      <div class="filename" id="filename-video"></div>
+    </div>
+  </div>
+
+  <div class="go">
+    <button class="primary" id="btn-save" disabled>Save to gallery</button>
+    <span class="note" id="add-note">Needs a name, an image, and a video.</span>
+  </div>
+</div>
+
+<!-- ===================== COMPILING STAGE ===================== -->
+<div class="stage" id="stage-compile">
+  <div class="compile-box">
+    <h2 id="compile-title">Reading the artwork's features</h2>
+    <p>This runs once, locally — the result is only used for this camera session.</p>
+    <div class="track"><div class="fill" id="compile-fill"></div></div>
+    <div class="compile-log" id="compile-log">starting…</div>
+  </div>
+</div>
+
+<!-- ===================== AR STAGE ===================== -->
+<div class="stage" id="stage-ar">
+  <div class="error-banner" id="ar-error"></div>
+  <div id="ar-container"></div>
+  <div class="ar-hud">
+    <div class="status-pill" id="status-pill">scanning…</div>
+    <button class="ghost" id="btn-exit">Exit</button>
+  </div>
+  <div class="ar-guide" id="ar-guide">Point the camera at any artwork in your gallery.</div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- MindAR + three.js (UMD builds) -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image.prod.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-three.prod.js"></script>
+
+<script>
+(function(){
+  "use strict";
+
+  const stages = {
+    gallery: document.getElementById('stage-gallery'),
+    add: document.getElementById('stage-add'),
+    compile: document.getElementById('stage-compile'),
+    ar: document.getElementById('stage-ar'),
+  };
+  function showStage(name){
+    Object.values(stages).forEach(s => s.classList.remove('active'));
+    stages[name].classList.add('active');
+  }
+
+  function toast(msg){
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => t.classList.remove('show'), 2600);
+  }
+
+  // ---------- Persistence (IndexedDB) ----------
+  const DB_NAME = 'bridge-ar-store';
+  const STORE = 'assets';
+
+  function openDb(){
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, 2);
+      req.onupgradeneeded = () => { if(!req.result.objectStoreNames.contains(STORE)) req.result.createObjectStore(STORE); };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  async function idbSet(key, value){
+    const db = await openDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).put(value, key);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+  async function idbGet(key){
+    const db = await openDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readonly');
+      const req = tx.objectStore(STORE).get(key);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  async function idbDelete(key){
+    const db = await openDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).delete(key);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  async function loadCampaigns(){
+    const list = await idbGet('campaigns');
+    if(list) return list;
+    // migrate a single legacy image/video pair from the previous version, if present
+    const [legacyImg, legacyVid] = await Promise.all([idbGet('image'), idbGet('video')]);
+    if(legacyImg && legacyVid){
+      const migrated = [{ id: cryptoId(), name: legacyImg.name.replace(/\.[a-z0-9]+$/i,''),
+        image: legacyImg, video: legacyVid }];
+      await idbSet('campaigns', migrated);
+      idbDelete('image').catch(()=>{});
+      idbDelete('video').catch(()=>{});
+      return migrated;
+    }
+    return [];
+  }
+  async function saveCampaigns(list){
+    await idbSet('campaigns', list);
+  }
+  function cryptoId(){
+    return (crypto.randomUUID ? crypto.randomUUID() : 'id-' + Date.now() + '-' + Math.random().toString(16).slice(2));
+  }
+
+  let campaigns = [];
+
+  // ---------- Gallery rendering ----------
+  async function refreshGallery(){
+    campaigns = await loadCampaigns();
+    const grid = document.getElementById('campaign-grid');
+    const empty = document.getElementById('empty-state');
+    const openBtn = document.getElementById('btn-open-ar');
+    grid.innerHTML = '';
+
+    if(campaigns.length === 0){
+      empty.style.display = 'block';
+      openBtn.disabled = true;
+      return;
+    }
+    empty.style.display = 'none';
+    openBtn.disabled = false;
+
+    campaigns.forEach(c => {
+      const url = URL.createObjectURL(c.image.blob);
+      const card = document.createElement('div');
+      card.className = 'campaign-card';
+      card.innerHTML = `
+        <div class="thumb"><img src="${url}" alt=""/></div>
+        <div class="meta">
+          <div class="name">${escapeHtml(c.name)}</div>
+          <div class="sub">${escapeHtml(c.video.name)}</div>
+        </div>
+        <div class="row">
+          <button class="ghost tiny" data-act="scan">Scan just this</button>
+          <button class="ghost tiny danger" data-act="delete">Delete</button>
+        </div>`;
+      card.querySelector('[data-act="scan"]').addEventListener('click', () => launchAR([c]));
+      card.querySelector('[data-act="delete"]').addEventListener('click', async () => {
+        campaigns = campaigns.filter(x => x.id !== c.id);
+        await saveCampaigns(campaigns);
+        refreshGallery();
+      });
+      grid.appendChild(card);
+    });
+  }
+  function escapeHtml(s){
+    return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  }
+
+  document.getElementById('btn-open-ar').addEventListener('click', () => launchAR(campaigns));
+  document.getElementById('btn-add').addEventListener('click', () => { resetAddForm(); showStage('add'); });
+  document.getElementById('back-to-gallery').addEventListener('click', () => { closeCamera(); showStage('gallery'); });
+
+  // ---------- Add-artwork stage ----------
+  let pendingImage = null, pendingVideo = null;
+
+  function resetAddForm(){
+    closeCamera();
+    pendingImage = null; pendingVideo = null;
+    document.getElementById('input-name').value = '';
+    document.getElementById('filename-image').textContent = '';
+    document.getElementById('filename-video').textContent = '';
+    document.getElementById('placeholder-image').outerHTML = '<div class="placeholder" id="placeholder-image">Drop an image, or tap to choose</div>';
+    document.getElementById('placeholder-video').outerHTML = '<div class="placeholder" id="placeholder-video">Drop a video, or tap to choose</div>';
+    checkAddReady();
+  }
+
+  function wireDropzone(dropId, inputId){
+    const drop = document.getElementById(dropId);
+    const input = document.getElementById(inputId);
+    ['dragenter','dragover'].forEach(evt => drop.addEventListener(evt, e => { e.preventDefault(); drop.classList.add('drag'); }));
+    ['dragleave','drop'].forEach(evt => drop.addEventListener(evt, e => { e.preventDefault(); drop.classList.remove('drag'); }));
+    drop.addEventListener('drop', e => {
+      const f = e.dataTransfer.files && e.dataTransfer.files[0];
+      if(f){ const dt = new DataTransfer(); dt.items.add(f); input.files = dt.files; input.dispatchEvent(new Event('change')); }
+    });
+  }
+  wireDropzone('drop-image', 'input-image');
+  wireDropzone('drop-video', 'input-video');
+
+  document.getElementById('input-image').addEventListener('change', e => {
+    const f = e.target.files[0]; if(!f) return;
+    pendingImage = f;
+    document.getElementById('filename-image').textContent = f.name;
+    document.getElementById('placeholder-image').outerHTML = `<img src="${URL.createObjectURL(f)}" alt="marker preview" id="placeholder-image"/>`;
+    if(!document.getElementById('input-name').value) document.getElementById('input-name').value = f.name.replace(/\.[a-z0-9]+$/i,'');
+    checkAddReady();
+  });
+  document.getElementById('input-video').addEventListener('change', e => {
+    const f = e.target.files[0]; if(!f) return;
+    pendingVideo = f;
+    document.getElementById('filename-video').textContent = f.name;
+    document.getElementById('placeholder-video').outerHTML = `<video src="${URL.createObjectURL(f)}" muted playsinline autoplay loop id="placeholder-video"></video>`;
+    checkAddReady();
+  });
+  document.getElementById('input-name').addEventListener('input', checkAddReady);
+
+  // ---------- Camera capture (for the artwork image) ----------
+  let cameraStream = null;
+
+  function useCapturedImage(file){
+    pendingImage = file;
+    document.getElementById('filename-image').textContent = file.name + ' (camera)';
+    document.getElementById('placeholder-image').outerHTML = `<img src="${URL.createObjectURL(file)}" alt="marker preview" id="placeholder-image"/>`;
+    if(!document.getElementById('input-name').value) document.getElementById('input-name').value = 'Camera photo';
+    checkAddReady();
+  }
+
+  async function openCamera(){
+    try{
+      cameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+    }catch(err){
+      console.error(err);
+      toast('Camera unavailable — check browser permissions');
+      return;
+    }
+    document.getElementById('drop-image').style.display = 'none';
+    document.getElementById('camera-panel').classList.add('show');
+    const video = document.getElementById('camera-preview');
+    video.srcObject = cameraStream;
+  }
+
+  function closeCamera(){
+    if(cameraStream){
+      cameraStream.getTracks().forEach(t => t.stop());
+      cameraStream = null;
+    }
+    document.getElementById('camera-panel').classList.remove('show');
+    document.getElementById('drop-image').style.display = 'flex';
+  }
+
+  document.getElementById('btn-use-camera').addEventListener('click', openCamera);
+  document.getElementById('btn-cancel-camera').addEventListener('click', closeCamera);
+  document.getElementById('btn-capture').addEventListener('click', () => {
+    const video = document.getElementById('camera-preview');
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    canvas.toBlob(blob => {
+      if(!blob){ toast('Could not capture that frame'); return; }
+      const file = new File([blob], 'camera-photo.png', { type: 'image/png' });
+      useCapturedImage(file);
+      closeCamera();
+    }, 'image/png');
+  });
+
+  function checkAddReady(){
+    const name = document.getElementById('input-name').value.trim();
+    const btn = document.getElementById('btn-save');
+    const note = document.getElementById('add-note');
+    if(name && pendingImage && pendingVideo){
+      btn.disabled = false; note.textContent = 'Ready to save.';
+    }else{
+      btn.disabled = true; note.textContent = 'Needs a name, an image, and a video.';
+    }
+  }
+
+  document.getElementById('btn-save').addEventListener('click', async () => {
+    const name = document.getElementById('input-name').value.trim();
+    const entry = {
+      id: cryptoId(), name,
+      image: { blob: pendingImage, name: pendingImage.name },
+      video: { blob: pendingVideo, name: pendingVideo.name },
+    };
+    campaigns.push(entry);
+    await saveCampaigns(campaigns);
+    toast('Saved to gallery');
+    showStage('gallery');
+    refreshGallery();
+  });
+
+  // ---------- Export / Import ----------
+  function blobToDataURL(blob){
+    return new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = reject;
+      r.readAsDataURL(blob);
+    });
+  }
+  function dataURLToBlob(dataUrl){
+    return fetch(dataUrl).then(r => r.blob());
+  }
+
+  document.getElementById('btn-export').addEventListener('click', async () => {
+    if(campaigns.length === 0){ toast('Nothing to export yet'); return; }
+    toast('Packing library…');
+    try{
+      const packed = await Promise.all(campaigns.map(async c => ({
+        id: c.id, name: c.name,
+        imageName: c.image.name, imageData: await blobToDataURL(c.image.blob),
+        videoName: c.video.name, videoData: await blobToDataURL(c.video.blob),
+      })));
+      const bundle = { format: 'bridge-ar-library', version: 1, campaigns: packed };
+      const blob = new Blob([JSON.stringify(bundle)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'bridge-library.json';
+      a.click();
+      toast('Downloaded — send this file to share your gallery');
+    }catch(err){
+      console.error(err);
+      toast('Export failed — see console');
+    }
+  });
+
+  document.getElementById('btn-import').addEventListener('click', () => document.getElementById('file-import').click());
+  document.getElementById('file-import').addEventListener('change', async e => {
+    const f = e.target.files[0];
+    if(!f) return;
+    try{
+      const text = await f.text();
+      const bundle = JSON.parse(text);
+      if(!bundle || bundle.format !== 'bridge-ar-library' || !Array.isArray(bundle.campaigns)) throw new Error('Not a recognized library file');
+      const imported = await Promise.all(bundle.campaigns.map(async c => ({
+        id: cryptoId(), name: c.name,
+        image: { blob: await dataURLToBlob(c.imageData), name: c.imageName },
+        video: { blob: await dataURLToBlob(c.videoData), name: c.videoName },
+      })));
+      campaigns = campaigns.concat(imported);
+      await saveCampaigns(campaigns);
+      toast(`Imported ${imported.length} artwork${imported.length===1?'':'s'}`);
+      refreshGallery();
+    }catch(err){
+      console.error(err);
+      toast('Could not read that file');
+    }
+    e.target.value = '';
+  });
+
+  // ---------- Compile + AR ----------
+  function loadImage(url){
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => resolve(img);
+      img.onerror = reject;
+      img.src = url;
+    });
+  }
+
+  let mindarThree = null;
+
+  async function launchAR(list){
+    if(!list || list.length === 0) return;
+    showStage('compile');
+    const fill = document.getElementById('compile-fill');
+    const log = document.getElementById('compile-log');
+    const title = document.getElementById('compile-title');
+    title.textContent = list.length === 1
+      ? `Reading "${list[0].name}"'s features`
+      : `Reading ${list.length} artworks' features`;
+    fill.style.width = '5%';
+    log.textContent = 'loading images…';
+
+    try{
+      const imgEls = await Promise.all(list.map(c => loadImage(URL.createObjectURL(c.image.blob))));
+      log.textContent = 'extracting trackable features…';
+      fill.style.width = '20%';
+
+      const compiler = new MINDAR.IMAGE.Compiler();
+      await compiler.compileImageTargets(imgEls, (progress) => {
+        const pct = Math.min(95, 20 + Math.round(progress * 0.75));
+        fill.style.width = pct + '%';
+        log.textContent = `extracting trackable features… ${Math.round(progress)}%`;
+      });
+
+      const exportedBuffer = compiler.exportData();
+      const targetBlobUrl = URL.createObjectURL(new Blob([exportedBuffer]));
+      fill.style.width = '100%';
+      log.textContent = 'starting camera…';
+
+      await startAR(targetBlobUrl, list, imgEls);
+    }catch(err){
+      console.error(err);
+      log.textContent = 'Something went wrong reading that image.';
+      fill.style.width = '0%';
+      setTimeout(() => {
+        alert('Could not process one of those images. Try a clearer, more detailed photo.\n\n(' + (err && err.message ? err.message : err) + ')');
+        showStage('gallery');
+      }, 300);
+    }
+  }
+
+  async function startAR(targetUrl, list, imgEls){
+    showStage('ar');
+    const errorBanner = document.getElementById('ar-error');
+    const statusPill = document.getElementById('status-pill');
+    const guide = document.getElementById('ar-guide');
+    errorBanner.classList.remove('show');
+    statusPill.textContent = list.length === 1 ? `looking for "${list[0].name}"…` : `scanning for ${list.length} artworks…`;
+    statusPill.classList.remove('found');
+    guide.style.display = 'block';
+
+    const foundNames = new Set();
+    function updateStatus(){
+      if(foundNames.size === 0){
+        statusPill.textContent = list.length === 1 ? `looking for "${list[0].name}"…` : `scanning for ${list.length} artworks…`;
+        statusPill.classList.remove('found');
+        guide.style.display = 'block';
+      }else{
+        statusPill.textContent = Array.from(foundNames).join(', ');
+        statusPill.classList.add('found');
+        guide.style.display = 'none';
+      }
+    }
+
+    try{
+      mindarThree = new MINDAR.IMAGE.MindARThree({
+        container: document.getElementById('ar-container'),
+        imageTargetSrc: targetUrl,
+        maxTrack: Math.min(list.length, 4),
+        uiScanning: false,
+        uiLoading: false,
+      });
+
+      const { renderer, scene, camera } = mindarThree;
+
+      list.forEach((c, i) => {
+        const aspect = imgEls[i].naturalHeight / imgEls[i].naturalWidth;
+        const video = document.createElement('video');
+        video.src = URL.createObjectURL(c.video.blob);
+        video.loop = true;
+        video.muted = true;
+        video.playsInline = true;
+        video.setAttribute('webkit-playsinline', 'true');
+
+        const texture = new THREE.VideoTexture(video);
+        const geometry = new THREE.PlaneGeometry(1, aspect);
+        const material = new THREE.MeshBasicMaterial({ map: texture, toneMapped: false });
+        const plane = new THREE.Mesh(geometry, material);
+
+        const anchor = mindarThree.addAnchor(i);
+        anchor.group.add(plane);
+
+        anchor.onTargetFound = () => {
+          foundNames.add(c.name);
+          updateStatus();
+          video.currentTime = 0;
+          video.play().catch(()=>{});
+        };
+        anchor.onTargetLost = () => {
+          foundNames.delete(c.name);
+          updateStatus();
+          video.pause();
+        };
+      });
+
+      await mindarThree.start();
+      renderer.setAnimationLoop(() => renderer.render(scene, camera));
+
+    }catch(err){
+      console.error(err);
+      errorBanner.textContent = 'Camera unavailable — check permissions, and that this page is served over HTTPS or localhost. (' + (err && err.message ? err.message : err) + ')';
+      errorBanner.classList.add('show');
+    }
+  }
+
+  document.getElementById('btn-exit').addEventListener('click', async () => {
+    if(mindarThree){
+      try{ await mindarThree.stop(); mindarThree.renderer.setAnimationLoop(null); }catch(e){}
+      mindarThree = null;
+    }
+    showStage('gallery');
+    refreshGallery();
+  });
+
+  refreshGallery();
+})();
+</script>
+</body>
+</html>
